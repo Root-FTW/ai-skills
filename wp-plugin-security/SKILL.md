@@ -1,11 +1,11 @@
 ---
 name: wp-plugin-security
-description: "Security guidelines for WordPress plugin development: sanitization, validation, escaping, nonces, capabilities, SQL injection prevention, XSS protection, and CSRF mitigation. Based on official WordPress Developer Resources."
+description: "Security guidelines for WordPress plugin development: sanitization, validation, escaping, nonces, capabilities, SQL injection prevention, XSS protection, safe redirects, and CSRF mitigation. Based on official WordPress Developer Resources."
 compatibility: "WordPress 6.0+ / PHP 7.4+. Applies to plugins, themes, and custom code."
 license: GPL-2.0-or-later
 metadata:
   author: ayudawp
-  version: "1.0"
+  version: "1.1"
 ---
 
 # WordPress plugin security
@@ -22,16 +22,18 @@ Use this skill when:
 - Creating admin pages or settings
 - Implementing AJAX or REST endpoints
 - Processing file uploads
+- Performing URL redirects based on user input
 
 ## Core security principles
 
 ### The security mantra
 
-```
+```text
 Sanitize early
 Escape late
 Always validate
 Never trust user input
+
 ```
 
 ### Key concepts
@@ -41,6 +43,7 @@ Never trust user input
 3. **Escaping**: Secure output data before rendering to prevent XSS
 4. **Nonces**: Protect against CSRF attacks on forms and URLs
 5. **Capabilities**: Verify user has permission to perform actions
+6. **Safe Redirects**: Ensure users are not redirected to malicious external sites
 
 ## Sanitization
 
@@ -49,7 +52,7 @@ Sanitize input data immediately upon receipt. Use the most specific function ava
 ### Sanitization functions
 
 | Function | Use case |
-|----------|----------|
+| --- | --- |
 | `sanitize_text_field()` | Single-line text input |
 | `sanitize_textarea_field()` | Multi-line text input |
 | `sanitize_email()` | Email addresses |
@@ -83,13 +86,14 @@ $url = sanitize_url( $_POST['website'] ?? '' );
 
 // Sanitize textarea
 $description = sanitize_textarea_field( $_POST['description'] ?? '' );
+
 ```
 
 ### Important notes on sanitization
 
-- **Never use escape functions for sanitization** - they serve different purposes
-- When using `filter_var()`, always specify a sanitizing filter (not `FILTER_DEFAULT`)
-- Process only the specific keys you need, not the entire `$_POST`/`$_GET` array
+* **Never use escape functions for sanitization** - they serve different purposes
+* When using `filter_var()`, always specify a sanitizing filter (not `FILTER_DEFAULT`)
+* Process only the specific keys you need, not the entire `$_POST`/`$_GET` array
 
 ```php
 // CORRECT: Specify sanitizing filter
@@ -97,6 +101,7 @@ $post_id = filter_input( INPUT_GET, 'post_id', FILTER_SANITIZE_NUMBER_INT );
 
 // WRONG: No filter or FILTER_DEFAULT does not sanitize
 $post_id = filter_input( INPUT_GET, 'post_id' ); // Insecure!
+
 ```
 
 ## Validation
@@ -118,6 +123,7 @@ if ( in_array( $status, $allowed_values, true ) ) {
 } else {
     wp_die( 'Invalid status' );
 }
+
 ```
 
 #### Format detection
@@ -134,6 +140,7 @@ if ( ! ctype_alnum( $data ) ) {
 if ( ! preg_match( '/^\d{5}(-\d{4})?$/', $zip_code ) ) {
     wp_die( 'Invalid ZIP code format' );
 }
+
 ```
 
 #### Type checking
@@ -150,12 +157,13 @@ if ( 1 === $user_input ) {
 if ( 1 == $user_input ) {
     // Vulnerable!
 }
+
 ```
 
 ### Validation functions
 
 | Function | Purpose |
-|----------|---------|
+| --- | --- |
 | `is_email()` | Validate email format |
 | `term_exists()` | Check if taxonomy term exists |
 | `username_exists()` | Check if username exists |
@@ -188,6 +196,7 @@ if ( isset( $_POST['zip'] ) && ayudawp_is_valid_us_zip( $_POST['zip'] ) ) {
     $zip = sanitize_text_field( $_POST['zip'] );
     // Process valid ZIP
 }
+
 ```
 
 ## Escaping
@@ -197,7 +206,7 @@ Escape output data **as late as possible**, immediately when echoing.
 ### Escaping functions
 
 | Function | Use case |
-|----------|----------|
+| --- | --- |
 | `esc_html()` | Text inside HTML elements |
 | `esc_attr()` | Values inside HTML attributes |
 | `esc_url()` | URLs in href, src attributes |
@@ -232,6 +241,7 @@ Escape output data **as late as possible**, immediately when echoing.
 
 // HTML content (preserves allowed HTML)
 <div><?php echo wp_kses_post( $html_content ); ?></div>
+
 ```
 
 ### Escape late pattern
@@ -246,6 +256,7 @@ echo '<a href="' . $url . '">' . $text . '</a>';
 
 // CORRECT: Escaping late
 echo '<a href="' . esc_url( $url ) . '">' . esc_html( $text ) . '</a>';
+
 ```
 
 ### Escaping with localization
@@ -263,18 +274,20 @@ echo esc_html_x( 'Post', 'noun', 'text-domain' );
 // For attributes
 echo esc_attr__( 'Submit', 'text-domain' );
 esc_attr_e( 'Submit', 'text-domain' );
+
 ```
 
 Available combined functions:
-- `esc_html__()`, `esc_html_e()`, `esc_html_x()`
-- `esc_attr__()`, `esc_attr_e()`, `esc_attr_x()`
+
+* `esc_html__()`, `esc_html_e()`, `esc_html_x()`
+* `esc_attr__()`, `esc_attr_e()`, `esc_attr_x()`
 
 ### Important escaping notes
 
-- **Never use `__()` or `_e()` without escaping** - they do not escape output
-- **`esc_url_raw()` is NOT an escaping function** - it's for sanitizing URLs for storage
-- Use `wp_kses_post()` or `wp_kses()` for HTML output, NOT `esc_html()` which strips HTML
-- When escaping HTML attributes, escape the entire value, not parts
+* **Never use `__()` or `_e()` without escaping** - they do not escape output
+* **`esc_url_raw()` is NOT an escaping function** - it's for sanitizing URLs for storage
+* Use `wp_kses_post()` or `wp_kses()` for HTML output, NOT `esc_html()` which strips HTML
+* When escaping HTML attributes, escape the entire value, not parts
 
 ```php
 // CORRECT: Escape the whole attribute value
@@ -282,6 +295,7 @@ echo '<div id="' . esc_attr( $prefix . '-box-' . $id ) . '">';
 
 // WRONG: Escaping parts separately
 echo '<div id="' . esc_attr( $prefix ) . '-box-' . esc_attr( $id ) . '">';
+
 ```
 
 ### Custom HTML escaping with wp_kses
@@ -298,6 +312,7 @@ $allowed_html = array(
 );
 
 echo wp_kses( $user_html, $allowed_html );
+
 ```
 
 ## Nonces
@@ -315,6 +330,7 @@ wp_nonce_field( 'save-settings_' . $user_id, 'ayudawp_nonce' );
 
 // Get nonce value only
 $nonce = wp_create_nonce( 'my-action_' . $post_id );
+
 ```
 
 ### Verifying nonces
@@ -333,12 +349,13 @@ if ( ! wp_verify_nonce(
 ) ) {
     wp_die( 'Security check failed' );
 }
+
 ```
 
 ### Nonce best practices
 
-- Make action strings specific: `'delete-post_' . $post_id` not just `'delete'`
-- Always sanitize nonce before verification:
+* Make action strings specific: `'delete-post_' . $post_id` not just `'delete'`
+* Always sanitize nonce before verification:
 
 ```php
 // CORRECT: Sanitize nonce input
@@ -350,11 +367,12 @@ if ( ! isset( $_POST['_wpnonce'] ) ||
 ) {
     wp_die( 'Security check failed' );
 }
+
 ```
 
-- Nonces have limited lifetime (default 24 hours, configurable)
-- **Nonces alone are not sufficient** - always combine with capability checks
-- Nonces are user-specific and session-specific
+* Nonces have limited lifetime (default 24 hours, configurable)
+* **Nonces alone are not sufficient** - always combine with capability checks
+* Nonces are user-specific and session-specific
 
 ### Modifying nonce lifetime
 
@@ -362,6 +380,7 @@ if ( ! isset( $_POST['_wpnonce'] ) ||
 add_filter( 'nonce_life', function() {
     return 4 * HOUR_IN_SECONDS;
 } );
+
 ```
 
 ## User capabilities
@@ -385,12 +404,13 @@ if ( ! current_user_can( 'edit_post', $post_id ) ) {
 if ( ! current_user_can( 'manage_options' ) ) {
     wp_die( 'Administrator access required.' );
 }
+
 ```
 
 ### Common capabilities
 
 | Capability | Role level |
-|------------|------------|
+| --- | --- |
 | `read` | Subscriber+ |
 | `edit_posts` | Contributor+ |
 | `publish_posts` | Author+ |
@@ -427,13 +447,46 @@ function ayudawp_delete_item() {
     // 4. Perform action
     // ... delete logic here
 }
+
 ```
 
-## SQL injection prevention
+## Database interaction & SQL injection prevention
+
+### Native CRUD operations (Preferred)
+
+Whenever possible, use `$wpdb` helper methods instead of writing raw SQL. These methods automatically prepare the data:
+
+```php
+global $wpdb;
+
+// Secure Insert
+$wpdb->insert(
+    $wpdb->posts,
+    array( 'post_title' => $title, 'post_status' => 'draft' ), // Data
+    array( '%s', '%s' ) // Formats
+);
+
+// Secure Update
+$wpdb->update(
+    $wpdb->posts,
+    array( 'post_title' => $new_title ), // Data
+    array( 'ID' => $post_id ), // WHERE clause
+    array( '%s' ), // Data formats
+    array( '%d' ) // WHERE formats
+);
+
+// Secure Delete
+$wpdb->delete(
+    $wpdb->posts,
+    array( 'ID' => $post_id ), // WHERE clause
+    array( '%d' ) // WHERE formats
+);
+
+```
 
 ### Use $wpdb->prepare()
 
-Always use prepared statements for database queries:
+For complex `SELECT` queries or when native CRUD methods aren't enough, always use prepared statements:
 
 ```php
 global $wpdb;
@@ -454,12 +507,13 @@ $results = $wpdb->get_results(
         $author_id
     )
 );
+
 ```
 
 ### Placeholders
 
 | Placeholder | Type |
-|-------------|------|
+| --- | --- |
 | `%d` | Integer |
 | `%f` | Float |
 | `%s` | String |
@@ -478,20 +532,40 @@ $results = $wpdb->get_results(
         $ids
     )
 );
+
 ```
 
 ### Use WordPress functions when possible
 
-Prefer WordPress API functions over direct SQL:
+Prefer WordPress API functions over direct SQL interactions:
 
 ```php
 // PREFERRED: Use WordPress functions
 update_post_meta( $post_id, 'my_key', $value );
 get_option( 'my_option' );
-WP_Query for post queries
 
-// AVOID: Direct SQL unless necessary
-$wpdb->query( "INSERT INTO..." );
+// PREFERRED: Use WP_Query for post queries
+$query = new WP_Query( $args );
+
+// AVOID: Direct SQL unless absolutely necessary (use $wpdb->insert/update/delete instead)
+// $wpdb->query( "INSERT INTO..." ); 
+
+```
+
+## Safe redirects
+
+When redirecting users based on input, always use `wp_safe_redirect()` to prevent **Open Redirect vulnerabilities**. `wp_safe_redirect()` ensures the user is only redirected to the current domain or an allowed host.
+
+```php
+// WRONG: Vulnerable to Open Redirect (attacker can send user to malicious site)
+wp_redirect( $_GET['return_url'] );
+exit;
+
+// CORRECT: Validates the URL is local/allowed
+$redirect_url = sanitize_url( wp_unslash( $_GET['return_url'] ?? home_url() ) );
+wp_safe_redirect( $redirect_url );
+exit;
+
 ```
 
 ## Common vulnerabilities
@@ -506,6 +580,7 @@ echo $user_input;
 
 // Secure
 echo esc_html( $user_input );
+
 ```
 
 ### CSRF (Cross-Site Request Forgery)
@@ -521,6 +596,7 @@ check_admin_referer( 'my_action', 'my_nonce' );
 if ( ! current_user_can( 'manage_options' ) ) {
     wp_die( 'Unauthorized' );
 }
+
 ```
 
 ### SQL Injection
@@ -535,6 +611,7 @@ $wpdb->query( "DELETE FROM table WHERE id = " . $_GET['id'] );
 $wpdb->query( 
     $wpdb->prepare( "DELETE FROM table WHERE id = %d", absint( $_GET['id'] ) )
 );
+
 ```
 
 ## File handling security
@@ -549,6 +626,7 @@ $uploaded = wp_handle_upload( $_FILES['my_file'], array(
 
 // WRONG: Direct move_uploaded_file
 move_uploaded_file( $_FILES['my_file']['tmp_name'], $destination );
+
 ```
 
 ### Never allow unfiltered uploads
@@ -557,22 +635,36 @@ move_uploaded_file( $_FILES['my_file']['tmp_name'], $destination );
 // NEVER DO THIS
 define( 'ALLOW_UNFILTERED_UPLOADS', true );
 
-// Instead, use upload_mimes filter for specific file types
+// Instead, use upload_mimes filter for specific, safe file types
 add_filter( 'upload_mimes', function( $mimes ) {
-    $mimes['svg'] = 'image/svg+xml';
+    $mimes['pdf'] = 'application/pdf'; // ✅ Safe example
+    
+    // WARNING: Allowing formats like 'svg' natively is a critical XSS risk.
+    // If you must allow SVG, always use a dedicated SVG sanitization library.
+    
     return $mimes;
 } );
+
 ```
 
-### Validate file types
+### Validate file types via magic bytes
+
+Do not rely only on file extensions, which can be easily spoofed. Use `wp_check_filetype_and_ext()` to inspect the real content of the file (*magic bytes*):
 
 ```php
-$allowed_types = array( 'image/jpeg', 'image/png', 'image/gif' );
-$file_type = wp_check_filetype( $filename );
+$tmp_name = $_FILES['my_file']['tmp_name'];
+$filename = $_FILES['my_file']['name'];
 
-if ( ! in_array( $file_type['type'], $allowed_types, true ) ) {
-    wp_die( 'Invalid file type' );
+// Checks both the extension and the real MIME type from content
+$validate_file = wp_check_filetype_and_ext( $tmp_name, $filename );
+
+$allowed_types = array( 'image/jpeg', 'image/png', 'image/gif' );
+
+// Verify the file has a valid type, extension, and is in our allowed list
+if ( ! $validate_file['type'] || ! $validate_file['ext'] || ! in_array( $validate_file['type'], $allowed_types, true ) ) {
+    wp_die( 'Invalid file type or fake extension detected.' );
 }
+
 ```
 
 ## Direct file access prevention
@@ -585,6 +677,7 @@ Add to all PHP files that could execute code:
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
+
 ```
 
 ## AJAX security
@@ -613,6 +706,7 @@ function ayudawp_ajax_handler() {
     // 4. Process and respond
     wp_send_json_success( array( 'result' => $data ) );
 }
+
 ```
 
 ### JavaScript side
@@ -623,6 +717,7 @@ wp_localize_script( 'my-script', 'myAjax', array(
     'ajaxurl' => admin_url( 'admin-ajax.php' ),
     'nonce'   => wp_create_nonce( 'my_ajax_nonce' ),
 ) );
+
 ```
 
 ```javascript
@@ -634,16 +729,18 @@ jQuery.post( myAjax.ajaxurl, {
 }, function( response ) {
     // Handle response
 });
+
 ```
 
 ## REST API security
 
 ```php
-register_rest_route( 'myplugin/v1', '/items', array(
+register_rest_route( 'myplugin/v1', '/items/(?P<id>\d+)', array(
     'methods'             => 'POST',
-    'callback'            => 'ayudawp_create_item',
-    'permission_callback' => function() {
-        return current_user_can( 'edit_posts' );
+    'callback'            => 'ayudawp_update_item',
+    // Injecting the $request object allows capability validation against the specific resource ID
+    'permission_callback' => function( WP_REST_Request $request ) {
+        return current_user_can( 'edit_post', $request['id'] );
     },
     'args'                => array(
         'title' => array(
@@ -655,64 +752,70 @@ register_rest_route( 'myplugin/v1', '/items', array(
         ),
     ),
 ) );
+
 ```
 
 ## Code review checklist
 
 ### Input handling
 
-- [ ] All `$_POST`, `$_GET`, `$_REQUEST` values are sanitized
-- [ ] All `$_FILES` uploads use `wp_handle_upload()`
-- [ ] Database queries use `$wpdb->prepare()`
-- [ ] Type casting used where appropriate (`absint()`, `(int)`, etc.)
+* [ ] All `$_POST`, `$_GET`, `$_REQUEST` values are sanitized
+* [ ] All `$_FILES` uploads use `wp_handle_upload()`
+* [ ] Uploaded files are validated securely via `wp_check_filetype_and_ext()` (magic bytes)
+* [ ] Database queries use `$wpdb->prepare()` or native CRUD methods (`$wpdb->insert`, `$wpdb->update`, etc.)
+* [ ] Type casting used where appropriate (`absint()`, `(int)`, etc.)
 
 ### Output handling
 
-- [ ] All dynamic output is escaped
-- [ ] Correct escape function used for context (html/attr/url/js)
-- [ ] Escaping happens at output time (late escaping)
-- [ ] Translation functions are escaped (`esc_html__()` not `__()`)
+* [ ] All dynamic output is escaped
+* [ ] Correct escape function used for context (html/attr/url/js)
+* [ ] Escaping happens at output time (late escaping)
+* [ ] Translation functions are escaped (`esc_html__()` not `__()`)
 
-### Authentication & authorization
+### Authentication, Authorization & Navigation
 
-- [ ] Nonces used on all forms and state-changing URLs
-- [ ] Nonces verified before processing actions
-- [ ] Capability checks performed before actions
-- [ ] Both nonce AND capability checked (not just one)
+* [ ] Nonces used on all forms and state-changing URLs
+* [ ] Nonces verified before processing actions (using `wp_unslash`)
+* [ ] Capability checks performed before actions (contextual via `$request` if needed)
+* [ ] Both nonce AND capability checked (not just one)
+* [ ] All URL redirects based on dynamic data use `wp_safe_redirect()`
 
 ### General
 
-- [ ] No `ALLOW_UNFILTERED_UPLOADS`
-- [ ] Direct file access prevented with `ABSPATH` check
-- [ ] No `error_reporting()` in production code
-- [ ] No timezone changes with `date_default_timezone_set()`
-- [ ] Uses WordPress HTTP API, not raw cURL
-- [ ] Uses `wp_enqueue_*` for scripts/styles
+* [ ] No `ALLOW_UNFILTERED_UPLOADS`
+* [ ] Direct file access prevented with `ABSPATH` check
+* [ ] No `error_reporting()` in production code
+* [ ] No timezone changes with `date_default_timezone_set()`
+* [ ] Uses WordPress HTTP API, not raw cURL
+* [ ] Uses `wp_enqueue_*` for scripts/styles
 
 ## WPCS security sniffs
 
 WordPress Coding Standards includes these security sniffs:
 
-- `EscapeOutputSniff` - Verifies output is escaped
-- `NonceVerificationSniff` - Verifies nonce checks
-- `ValidatedSanitizedInputSniff` - Verifies input sanitization
-- `SafeRedirectSniff` - Verifies safe redirects
-- `PluginMenuSlugSniff` - Verifies menu slug safety
+* `EscapeOutputSniff` - Verifies output is escaped
+* `NonceVerificationSniff` - Verifies nonce checks
+* `ValidatedSanitizedInputSniff` - Verifies input sanitization
+* `SafeRedirectSniff` - Verifies safe redirects
+* `PluginMenuSlugSniff` - Verifies menu slug safety
 
 Run PHPCS with WordPress standards:
 
 ```bash
 phpcs --standard=WordPress path/to/plugin
+
 ```
 
 ## References
 
-- [WordPress Security API](https://developer.wordpress.org/apis/security/)
-- [Escaping Data](https://developer.wordpress.org/apis/security/escaping/)
-- [Sanitizing Data](https://developer.wordpress.org/apis/security/sanitizing/)
-- [Data Validation](https://developer.wordpress.org/apis/security/data-validation/)
-- [Nonces](https://developer.wordpress.org/apis/security/nonces/)
-- [User Roles and Capabilities](https://developer.wordpress.org/apis/security/user-roles-and-capabilities/)
-- [Common Vulnerabilities](https://developer.wordpress.org/apis/security/common-vulnerabilities/)
-- [Plugin Review Team Common Issues](https://developer.wordpress.org/plugins/wordpress-org/common-issues/)
-- [WordPress Coding Standards](https://github.com/WordPress/WordPress-Coding-Standards)
+* [WordPress Security API](https://developer.wordpress.org/apis/security/)
+* [Escaping Data](https://developer.wordpress.org/apis/security/escaping/)
+* [Sanitizing Data](https://developer.wordpress.org/apis/security/sanitizing/)
+* [Data Validation](https://developer.wordpress.org/apis/security/data-validation/)
+* [Nonces](https://developer.wordpress.org/apis/security/nonces/)
+* [User Roles and Capabilities](https://developer.wordpress.org/apis/security/user-roles-and-capabilities/)
+* [Common Vulnerabilities](https://developer.wordpress.org/apis/security/common-vulnerabilities/)
+* [Plugin Review Team Common Issues](https://developer.wordpress.org/plugins/wordpress-org/common-issues/)
+* [WordPress Coding Standards](https://github.com/WordPress/WordPress-Coding-Standards)
+
+```
